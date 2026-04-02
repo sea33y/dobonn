@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ドボン計算</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+
+<body class="bg-gray-100">
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState,useEffect}=React;
+
+function App(){
+
+const panel="bg-white rounded-2xl shadow p-4 mb-4";
+const title="font-bold mb-2";
+
+/* ===== 保存 ===== */
+const load=()=>{
+const s=localStorage.getItem("dobon");
+return s?JSON.parse(s):null;
+};
+const save=(d)=>localStorage.setItem("dobon",JSON.stringify(d));
+
+const saved=load();
+
+/* ===== 状態 ===== */
+const [page,setPage]=useState(saved?.page||"start");
+const [n,setN]=useState(saved?.n||2);
+const [r,setR]=useState(saved?.r||5);
+const [names,setNames]=useState(saved?.names||["",""]);
+
+const createState=(n,r,names)=>({
+n,maxRound:r,names,
+scores:Array(n).fill(0),
+round:1,
+roundScores:Array(r).fill(null).map(()=>Array(n).fill(0)),
+roundType:Array(r).fill(""),
+roundDobonIdx:Array(r).fill(null).map(()=>[]),
+roundTargetIdx:Array(r).fill(null),
+roundBase:Array(r).fill(null).map(()=>Array(n).fill(0)),
+halfFlags:Array(r).fill(null).map(()=>Array(n).fill(false)),
+halfBefore:Array(r).fill(null).map(()=>Array(n).fill(0)),
+confirmed:false
+});
+
+const [state,setState]=useState(saved?.state||null);
+
+const [base,setBase]=useState([]);
+const [type,setType]=useState("選択");
+const [dobon,setDobon]=useState([]);
+const [target,setTarget]=useState(null);
+
+const [result,setResult]=useState([]);
+const [rank,setRank]=useState([]);
+
+/* ===== 保存 ===== */
+useEffect(()=>{ save({page,n,r,names,state}); },[page,n,r,names,state]);
+
+/* ========= 人数変更時 NaN対策 ========= */
+  useEffect(() => {
+    setBase(Array(n).fill(0));
+  }, [n]);
+
+/* ===== 復元 ===== */
+useEffect(()=>{
+if(!state)return;
+const i=state.round-1;
+setBase(state.roundBase[i]);
+setType(state.roundType[i]||"選択");
+setDobon(state.roundDobonIdx[i]||[]);
+setTarget(state.roundTargetIdx[i]??null);
+},[state?.round]);
+
+const invalidate=()=>setState(p=>({...p,confirmed:false}));
+
+/* ===== 選択 ===== */
+const toggleDobon=(i)=>{
+if(target===i)return;
+setDobon(dobon.includes(i)?dobon.filter(v=>v!==i):[...dobon,i]);
+invalidate();
+};
+
+const toggleTarget=(i)=>{
+if(dobon.includes(i))return;
+setTarget(target===i?null:i);
+invalidate();
+};
+
+/* ===== 計算 ===== */
+const confirm=()=>{
+if(type==="選択")return;
+
+const i=state.round-1;
+let score=Array(state.n).fill(0);
+
+if(type==="ドボン"||type==="ドボン返し"){
+if(dobon.length===0||target===null)return;
+}
+if(type==="ウルトラドボン"&&dobon.length===0)return;
+
+switch(type){
+
+case "素上がり":
+score=[...base];
+break;
+
+case "ドボン":
+for(let j=0;j<state.n;j++){
+if(dobon.includes(j)) score[j]=-50;
+else if(j===target) score[j]=base[j]+50*dobon.length;
+else score[j]=base[j];
+}
+break;
+
+case "ドボン返し":
+for(let j=0;j<state.n;j++){
+if(j===target) score[j]=-100*dobon.length;
+else if(dobon.includes(j)) score[j]=base[j]+100;
+else score[j]=base[j];
+}
+break;
+
+case "ウルトラドボン":
+for(let j=0;j<state.n;j++){
+if(dobon.includes(j)) score[j]=-50*(state.n-dobon.length);
+else score[j]=base[j]+50;
+}
+break;
+}
+
+/* 累計 */
+let newScores=[...state.scores];
+const prev=state.roundScores[i];
+for(let j=0;j<state.n;j++) newScores[j]-=prev[j];
+for(let j=0;j<state.n;j++) newScores[j]+=score[j];
+
+/* 半減 */
+let half=Array(state.n).fill(false);
+let before=Array(state.n).fill(0);
+
+for(let j=0;j<state.n;j++){
+if(newScores[j]>0 && newScores[j]%100===0){
+before[j]=newScores[j];
+newScores[j]/=2;
+half[j]=true;
+}
+}
+
+/* 表示 */
+setResult(score.map((s,k)=>`${state.names[k]} : ${s>=0?"+":""}${s}`));
+
+const sorted=[...newScores].map((v,i)=>({v,i})).sort((a,b)=>a.v-b.v);
+setRank(sorted.map((x,i)=>{
+const b=before[x.i];
+return `${i+1}位 ${state.names[x.i]} : ${newScores[x.i]}${b?` (${b})★`:""}`;
+}));
+
+/* 保存 */
+const rs=[...state.roundScores]; rs[i]=score;
+const hf=[...state.halfFlags]; hf[i]=half;
+const hb=[...state.halfBefore]; hb[i]=before;
+
+setState(prev=>({...prev,
+scores:newScores,
+roundScores:rs,
+halfFlags:hf,
+halfBefore:hb,
+roundType:Object.assign([...prev.roundType],{[i]:type}),
+roundDobonIdx:Object.assign([...prev.roundDobonIdx],{[i]:dobon}),
+roundTargetIdx:Object.assign([...prev.roundTargetIdx],{[i]:target}),
+roundBase:Object.assign([...prev.roundBase],{[i]:base}),
+confirmed:true
+}));
+};
+
+/* ===== 共有 ===== */
+const share=async ()=>{
+const sorted=[...state.scores].map((v,i)=>({v,i})).sort((a,b)=>a.v-b.v);
+
+let txt="【ドボン結果】\n";
+sorted.forEach((x,i)=>{
+txt+=`${i+1}位 ${state.names[x.i]} : ${x.v}\n`;
+});
+
+if(navigator.share){
+await navigator.share({text:txt});
+}else{
+await navigator.clipboard.writeText(txt);
+alert("コピーしました");
+}
+};
+
+/* ===== START ===== */
+if (page === "start") {
+    return (
+        <div className="flex h-screen items-center justify-center">
+            <div className="w-80">
+                <div className={panel}>
+                    <h1 className="text-xl font-bold mb-3">ドボン計算</h1>
+                    <button 
+                        className="w-full bg-black text-white p-3 mb-2"
+                        onClick={() => setPage("init")} // スタートページから即設定ページへ遷移
+                    >
+                        開始
+                    </button>
+
+                    <button 
+                        className="w-full bg-gray-300 p-2"
+                        onClick={() => setPage("rule")} // ルールページに遷移
+                    >
+                        ルール
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+/* ===== RULE ===== */
+if(page==="rule"){
+    return(
+        <div className="p-4 max-w-md mx-auto">
+            <div className={panel}>
+                <h1 className="font-bold mb-2">ルール</h1>
+                <p className="text-sm whitespace-pre-line">
+                    <strong>■ゲームの目的</strong><br />
+                    手札の数字の合計をできるだけ小さくし、ラウンド終了時の合計点が一番少ない人が勝ち。<br /><br />
+
+                    <strong>■準備</strong><br />
+                    ジョーカーを覗いた52枚のトランプを使用する。<br />
+                    各プレイヤーに4枚ずつ配り、残りのカードを山札とする。<br />
+                    山札の一番上をめくって場に出す。<br /><br />
+
+                    <strong>■基本</strong><br />
+                    自分の番では、場のカードと同じ「数字」または「マーク」のカードを1枚出せる。<br />
+                    出せない場合は山札から1枚引く。<br /><br />
+
+                    <strong>■ページ1</strong><br />
+                    手札が1枚になったら「ページ1」と言う。<br />
+                    言い忘れて他の人に指摘されたらペナルティでカードを2枚引く。<br /><br />
+
+                    <strong>■ドボン</strong><br />
+                    自分の番でなくても、場の数字と手札の合計が同じになったら「ドボン！」と言ってすぐカードを出すことができる。<br />
+                    成功するとそのラウンドは終了する。<br />
+                    そして他のプレイヤーの手札の合計が点数になる。<br /><br />
+
+                    <strong>■ドボン返し</strong><br />
+                    誰かがドボンした瞬間、自分の手札の合計も同じ数字ならすぐに「ドボン返し！」と言って出すことができる。<br />
+                    その場合返した人が勝ちになる。<br /><br />
+
+                    <strong>■ウルトラドボン</strong><br />
+                    山札から最初にめくった1枚と手札の合計が同じなら「ウルトラドボン！」と言って出すことができる。<br />
+                    成功すればその人の勝ちになる。<br /><br />
+
+                    <strong>■特殊カード</strong><br />
+                    <strong>・2</strong><br />
+                    次の人は2枚引く。<br />
+                    2を出せば累積できる。<br />
+                    （例：2 → 2 → 2 → 6枚引き）<br />
+                    <strong>・8</strong><br />
+                    マークを変更できる。<br />
+                    好きなマークを宣言する。<br /><br />
+
+                    <strong>■点数について</strong><br />
+                    ラウンドごとに手札点数を入力する。<br />
+                    累計点数が低い人が勝ち。<br /><br />
+                    なお、このサイトでは手札の点数を入力すればよい。<br /><br />
+
+                    <strong>■素上がり</strong><br />
+                    通常終了。（手札）点数をそのまま加算。<br /><br />
+
+                    <strong>■ドボン</strong><br />
+                    ドボンした人：-50点<br />
+                    ドボンされた人：（手札+ドボンした人の手札）+50点×ドボンした人の数<br /><br />
+
+                    <strong>■ドボン返し</strong><br />
+                    返した人：-100点×人数<br />
+                    ドボンした人：（手札+ドボン返しした人の手札）+100点<br /><br />
+
+                    <strong>■ウルトラドボン</strong><br />
+                    成功者：-(人数-成功者の数)×50点<br />
+                    他全員：（手札+ウルトラドボンした人の手札）+50点×ウルトラドボンした人の数<br /><br />
+
+                    <strong>■半額ルール</strong><br />
+                    累計が100の倍数（>0）になると累計点数が半分になる。<br />
+                </p>
+            </div>
+
+            {/* 参考点数表 */}
+            <div className={panel}>
+                <h2 className="font-bold mb-2">■参考点数表</h2>
+                <table className="table-auto w-full text-sm">
+                    <thead>
+                        <tr>
+                            <th className="px-4 py-2">カード</th>
+                            <th className="px-4 py-2">点数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td className="px-4 py-2">1</td>
+                            <td className="px-4 py-2">1点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">2</td>
+                            <td className="px-4 py-2">50点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">3</td>
+                            <td className="px-4 py-2">3点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">4</td>
+                            <td className="px-4 py-2">4点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">5</td>
+                            <td className="px-4 py-2">5点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">6</td>
+                            <td className="px-4 py-2">6点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">7</td>
+                            <td className="px-4 py-2">7点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">8</td>
+                            <td className="px-4 py-2">40点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">9</td>
+                            <td className="px-4 py-2">9点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">10</td>
+                            <td className="px-4 py-2">10点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">J (ジャック)</td>
+                            <td className="px-4 py-2">10点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">Q (クイーン)</td>
+                            <td className="px-4 py-2">10点</td>
+                        </tr>
+                        <tr>
+                            <td className="px-4 py-2">K (キング)</td>
+                            <td className="px-4 py-2">10点</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <button className="w-full bg-black text-white p-2"
+                    onClick={() => setPage("start")}>戻る</button>
+        </div>
+    );
+}
+/* ===== INIT ===== */
+if(page==="init"){
+return(
+<div className="p-4 max-w-md mx-auto">
+
+<div className={panel}>
+<div className={title}>ラウンド数</div>
+<input type="number" value={r}
+onChange={e=>setR(Number(e.target.value))}
+className="border p-2 w-full"/>
+</div>
+
+<div className={panel}>
+<div className={title}>人数</div>
+<input type="number" value={n}
+onChange={e=>{
+const v=Number(e.target.value);
+if(v>names.length)setNames([...names,...Array(v-names.length).fill("")]);
+else setNames(names.slice(0,v));
+setN(v);
+}}
+className="border p-2 w-full"/>
+</div>
+
+<div className={panel}>
+<div className={title}>名前</div>
+{names.map((v,i)=>(
+<input key={i} className="border p-2 w-full mb-2"
+value={v}
+onChange={e=>{
+const arr=[...names];
+arr[i]=e.target.value;
+setNames(arr);
+}}/>
+))}
+</div>
+
+<button className="w-full bg-black text-white p-3"
+onClick={()=>{
+setState(createState(n,r,names));
+setResult([]);
+setRank([]);
+setPage("game");
+}}>開始</button>
+
+</div>
+);
+}
+
+/* ===== RESULT ===== */
+if(page==="result"){
+const sorted=[...state.scores].map((v,i)=>({v,i})).sort((a,b)=>a.v-b.v);
+
+return(
+<div className="p-4 max-w-md mx-auto">
+
+<div className={panel}>
+<h1 className="font-bold mb-2">最終結果</h1>
+
+{sorted.map((x,i)=>{
+const hist=state.roundScores.map((row,ri)=>{
+return state.halfFlags[ri][x.i]?`${row[x.i]}★`:row[x.i];
+}).join("/");
+
+return <div key={i}>
+{i+1}位 {state.names[x.i]} : {state.scores[x.i]} ({hist})
+</div>
+})}
+</div>
+
+<button className="w-full bg-green-500 text-white p-2 mb-2"
+onClick={share}>共有</button>
+
+<button className="w-full bg-black text-white p-2 mb-2"
+onClick={()=>{
+setState(createState(n,r,names));
+setResult([]);
+setRank([]);
+setPage("game");
+}}>もう一度遊ぶ</button>
+
+<button className="w-full bg-gray-400 p-2"
+onClick={()=>setPage("init")}>設定変更</button>
+
+</div>
+);
+}
+
+/* ===== GAME ===== */
+return(
+<div className="p-4 max-w-4xl mx-auto">
+
+<h1 className="font-bold mb-3">
+ラウンド {state.round}/{state.maxRound}
+</h1>
+
+<div className={panel}>
+<div className={title}>上がり方</div>
+<select value={type}
+onChange={e=>{setType(e.target.value);invalidate();}}
+className="border p-2 w-full">
+<option>選択</option>
+<option>素上がり</option>
+<option>ドボン</option>
+<option>ドボン返し</option>
+<option>ウルトラドボン</option>
+</select>
+</div>
+
+{/* ドボン */}
+{(type==="ドボン"||type==="ドボン返し") && (
+<div className={panel}>
+<div className={title}>ドボンした人</div>
+{state.names.map((n,i)=>(
+<label key={i} className={`block ${target===i?"text-gray-400":""}`}>
+<input type="checkbox"
+disabled={target===i}
+checked={dobon.includes(i)}
+onChange={()=>toggleDobon(i)}/> {n}
+</label>
+))}
+
+<div className={title}>
+{type==="ドボン" && "ドボンされた人"}
+{type==="ドボン返し" && "ドボン返しした人"}
+</div>
+
+{state.names.map((n,i)=>(
+<label key={i} className={`block ${dobon.includes(i)?"text-gray-400":""}`}>
+<input type="checkbox"
+disabled={dobon.includes(i)}
+checked={target===i}
+onChange={()=>toggleTarget(i)}/> {n}
+</label>
+))}
+</div>
+)}
+
+{/* ウルトラ */}
+{type==="ウルトラドボン" && (
+<div className={panel}>
+<div className={title}>ウルトラドボンした人</div>
+{state.names.map((n,i)=>(
+<label key={i} className="block">
+<input type="checkbox"
+checked={dobon.includes(i)}
+onChange={()=>toggleDobon(i)}/> {n}
+</label>
+))}
+</div>
+)}
+
+{/* 点数 */}
+<div className={panel}>
+<div className={title}>手札点数</div>
+{state.names.map((n,i)=>{
+const disabled =
+(type==="ウルトラドボン" && dobon.includes(i)) ||
+(type==="ドボン" && dobon.includes(i)) ||
+(type==="ドボン返し" && target===i);
+
+return(
+<div key={i} className="flex items-center mb-2 gap-2">
+<div className="w-24">{n}</div>
+<input type="number"
+disabled={disabled}
+className={`border p-2 flex-1 ${disabled?"bg-gray-200":""}`}
+value={base[i]||0}
+onChange={e=>{
+const arr=[...base];
+arr[i]=Number(e.target.value);
+setBase(arr);
+invalidate();
+}}/>
+</div>
+);
+})}
+</div>
+
+{/* 結果 */}
+<div className={`${panel} h-64 overflow-y-auto`}>
+  <div className={title}>今回の結果</div>
+  {result.map((r,i)=><div key={i}>{r}</div>)}
+</div>
+
+<div className={`${panel} h-64 overflow-y-auto`}>
+  <div className={title}>累計順位</div>
+  {rank.map((r,i)=><div key={i}>{r}</div>)}
+</div>
+
+{/* 履歴 */}
+<div className={`${panel} h-64 overflow-y-auto`}>
+  <div className={title}>履歴</div>
+  <table className="w-full text-sm text-center">
+    <thead>
+      <tr>
+        <th>R</th>
+        {state.names.map((n,i)=><th key={i}>{n}</th>)}
+      </tr>
+    </thead>
+    <tbody>
+      {state.roundScores.map((row,ri)=>(
+        <tr key={ri}>
+          <td>R{ri+1}</td>
+          {row.map((v,i)=>{
+            const isHalf=state.halfFlags[ri][i];
+            const isDobon=state.roundDobonIdx[ri].includes(i);
+            const isTarget=state.roundTargetIdx[ri]===i;
+            
+            let color="text-black";
+            if(state.roundType[ri]==="素上がり") color="text-green-500";
+            else if(isDobon) color="text-red-500";
+            else if(isTarget) color="text-blue-500";
+            
+            return <td key={i} className={color}>{v}{isHalf?"★":""}</td>
+          })}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+{/* ボタン */}
+<div className="flex gap-2 mt-2">
+
+<button className="text-xs bg-gray-300 px-2 py-1 rounded"
+onClick={()=>setPage("init")}>設定</button>
+
+<button className={`text-xs px-2 py-1 rounded ${
+state.round>1 ? "bg-gray-300" : "bg-gray-200 text-gray-400"
+}`}
+onClick={()=>{
+if(state.round>1){
+setState(p=>({...p,round:p.round-1,confirmed:false}));
+}
+}}>戻る</button>
+
+<button
+className={`flex-1 p-2 rounded text-white ${
+(type==="選択"||state.confirmed)
+? "bg-gray-400"
+: "bg-green-500"
+}`}
+onClick={confirm}>確定</button>
+
+<button
+className={`flex-1 p-2 rounded text-white ${
+state.confirmed?"bg-blue-500":"bg-gray-400"
+}`}
+onClick={()=>{
+if(!state.confirmed)return;
+if(state.round>=state.maxRound)setPage("result");
+else setState(p=>({...p,round:p.round+1,confirmed:false}));
+}}>次へ</button>
+
+</div>
+
+</div>
+);
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

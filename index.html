@@ -618,6 +618,7 @@ state.confirmed?"bg-blue-500":"bg-gray-400"
 }`}
 onClick={()=>{
 if(!state.confirmed)return;
+window.scrollTo({ top: 0, behavior: "smooth" });
 if(state.round>=state.maxRound)setPage("result");
 else setState(p=>({...p,round:p.round+1,confirmed:false}));
 }}>次へ</button>

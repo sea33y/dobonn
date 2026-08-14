@@ -147,7 +147,7 @@ let half=Array(state.n).fill(false);
 let before=Array(state.n).fill(0);
 
 for(let j=0;j<state.n;j++){
-if(newScores[j]>0 && newScores[j]%100===0){
+if(newScores[j]!==0 && newScores[j]%100===0){
 before[j]=newScores[j];
 newScores[j]/=2;
 half[j]=true;

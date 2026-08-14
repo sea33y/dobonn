@@ -26,17 +26,47 @@ const title="font-bold mb-2";
 const load=()=>{
   try{
     const s=localStorage.getItem("dobon");
-    return s ? JSON.parse(s) : null;
+    if(!s) return null;
+
+    const data=JSON.parse(s);
+
+    // 保存データの基本チェック
+    if(
+      !data ||
+      !["start","init","game","result","rule"].includes(data.page)
+    ){
+      localStorage.removeItem("dobon");
+      return null;
+    }
+
+    // ゲーム途中データがある場合、現在の形式か確認
+    if(data.state){
+      const st=data.state;
+
+      if(
+        !Array.isArray(st.scores) ||
+        !Array.isArray(st.roundScores) ||
+        !Array.isArray(st.roundType) ||
+        !Array.isArray(st.roundDobonIdx) ||
+        !Array.isArray(st.roundTargetIdx) ||
+        !Array.isArray(st.roundBase) ||
+        !Array.isArray(st.halfFlags) ||
+        !Array.isArray(st.halfBefore)
+      ){
+        console.warn("古い形式の保存データを削除しました");
+        localStorage.removeItem("dobon");
+        return null;
+      }
+    }
+
+    return data;
+
   }catch(e){
-    console.warn("保存データの読み込みに失敗しました。初期状態で起動します。", e);
+    console.warn("保存データを削除して初期状態で起動します",e);
     localStorage.removeItem("dobon");
     return null;
   }
 };
-const save=(d)=>localStorage.setItem("dobon",JSON.stringify(d));
-
-const saved=load();
-
 /* ===== 状態 ===== */
 const [page,setPage]=useState(saved?.page||"start");
 const [n,setN]=useState(saved?.n||2);

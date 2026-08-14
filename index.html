@@ -24,8 +24,14 @@ const title="font-bold mb-2";
 
 /* ===== 保存 ===== */
 const load=()=>{
-const s=localStorage.getItem("dobon");
-return s?JSON.parse(s):null;
+  try{
+    const s=localStorage.getItem("dobon");
+    return s ? JSON.parse(s) : null;
+  }catch(e){
+    console.warn("保存データの読み込みに失敗しました。初期状態で起動します。", e);
+    localStorage.removeItem("dobon");
+    return null;
+  }
 };
 const save=(d)=>localStorage.setItem("dobon",JSON.stringify(d));
 

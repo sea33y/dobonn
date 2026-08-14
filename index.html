@@ -67,6 +67,19 @@ const load=()=>{
     return null;
   }
 };
+
+// 起動時に保存データを読み込む
+const saved = load();
+
+// localStorageへ保存
+const save = (data) => {
+  try {
+    localStorage.setItem("dobon", JSON.stringify(data));
+  } catch (e) {
+    console.warn("保存に失敗しました", e);
+  }
+};
+
 /* ===== 状態 ===== */
 const [page,setPage]=useState(saved?.page||"start");
 const [n,setN]=useState(saved?.n||2);
@@ -241,14 +254,14 @@ if (page === "start") {
             <div className="w-80">
                 <div className={panel}>
                     <h1 className="text-xl font-bold mb-3">ドボン計算</h1>
-                    <button 
+                    <button
                         className="w-full bg-black text-white p-3 mb-2"
                         onClick={() => setPage("init")} // スタートページから即設定ページへ遷移
                     >
                         開始
                     </button>
 
-                    <button 
+                    <button
                         className="w-full bg-gray-300 p-2"
                         onClick={() => setPage("rule")} // ルールページに遷移
                     >
@@ -327,7 +340,7 @@ if(page==="rule"){
                     他全員：（手札+ウルトラドボンした人の手札）+50点×ウルトラドボンした人の数<br /><br />
 
                     <strong>■半額ルール</strong><br />
-                    累計が100の倍数（>0）になると累計点数が半分になる。<br />
+                    累計が0以外の100の倍数になると、正負にかかわらず累計点数が半分になる。<br />
                 </p>
             </div>
 
@@ -611,12 +624,12 @@ invalidate();
             const isHalf=state.halfFlags[ri][i];
             const isDobon=state.roundDobonIdx[ri].includes(i);
             const isTarget=state.roundTargetIdx[ri]===i;
-            
+
             let color="text-black";
             if(state.roundType[ri]==="素上がり") color="text-green-500";
             else if(isDobon) color="text-red-500";
             else if(isTarget) color="text-blue-500";
-            
+
             return <td key={i} className={color}>{v}{isHalf?"★":""}</td>
           })}
         </tr>
